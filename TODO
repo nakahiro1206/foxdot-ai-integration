@@ -1,0 +1,28 @@
+## Need to set Token of Sonic PI
+
+@mcp.tool()
+async def play_music(code: str) -> str:
+    """Play music using Sonic Pi code.
+
+    Args:
+        code: Sonic Pi Ruby code
+
+    Returns:
+        A confirmation message
+    """
+    if not check_sonic_pi_running():
+        return "Error: Sonic Pi does not appear to be running. Please start Sonic Pi first."
+
+    if not PSONIC_AVAILABLE:
+        return (
+            "Error: The psonic library couldn't be initialized. Check Sonic Pi status."
+        )
+
+    try:
+        stop()
+        run(code)
+        send_message("/trigger/prophet", 70, 100, 8)
+        return "Code is now running. If you don't hear anything, check Sonic Pi for errors."
+    except Exception as e:
+        return f"Error running code: {str(e)}"
+

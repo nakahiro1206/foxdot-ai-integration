@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sonic-pi": {
+      "args": [
+        "mcp-sonic-pi"
+      ],
+      "command": "/path/to/uvx"
+    }
+  }
+}
