@@ -1,0 +1,1 @@
+uvx mcp-sonic-pi
