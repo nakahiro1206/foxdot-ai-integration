@@ -20,6 +20,7 @@ class Resources:
 
     def cleanup(self):
         for resource in self.resources:
+            print(f"Cleaning up resource: {resource.__class__.__name__}")
             resource.cleanup()
 
 
