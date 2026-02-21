@@ -9,6 +9,7 @@ from watchdog.events import (
     FileSystemEventHandler,
 )
 from .writer import FileSystem
+from src.resources import Resource
 
 
 class UpdateHandler(FileSystemEventHandler):
@@ -43,8 +44,9 @@ class UpdateHandler(FileSystemEventHandler):
         self.process(event)
 
 
-class FileSystemWatcher:
+class FileSystemWatcher(Resource):
     def __init__(self):
+        super().register()
         self.fs = FileSystem()
         self.event_handler = UpdateHandler(self.fs)
         self.observer = Observer()
