@@ -1,6 +1,6 @@
 import subprocess
 from typing import Iterator
-from src.env import env
+from src.config import config
 from src.resources import Resource
 from typing import Literal
 
@@ -20,7 +20,7 @@ class ProcessManager(Resource):
     def __init__(self) -> None:
         super().register()
         self.process: subprocess.Popen | None = None
-        self.venv_python = env.venv_python
+        self.venv_python = config.venv_python
 
     def cleanup(self) -> None:
         self.kill_process()

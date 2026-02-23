@@ -5,22 +5,25 @@ from .schema import Component
 
 
 class FileList(Component):
-    def __init__(self, on_click_callback: Callable[[gr.Button, gr.Textbox], None]):
+    def __init__(self, on_click_callback: Callable[[gr.Button], None]):
         self.file_watcher = FileSystemWatcher()
         self.files_state = gr.State(self.file_watcher.get_current_files())
+        self.selected_file = gr.State("")
         self.on_click_cb = on_click_callback
 
         self.render()
 
     def render(self):
         gr.Markdown("## Files")
-        selected = gr.Textbox(label="Selected File", interactive=False)
+
+        self.new_button = gr.Button("New File")
 
         @gr.render(inputs=self.files_state)
         def render_files(files: list[str]):
             for filename in files:
-                btn = gr.Button(filename)
-                self.on_click_cb(btn, selected)
+                variant = "secondary"
+                btn = gr.Button(filename, variant=variant)
+                self.on_click_cb(btn)
 
         # event listener
         timer = gr.Timer(1)
@@ -28,10 +31,3 @@ class FileList(Component):
 
     def reload_files(self) -> list[str]:
         return self.file_watcher.get_current_files()
-
-    def update_files(self, files: list[str]):
-        self.files_state.value = files
-
-    @staticmethod
-    def on_click(filename: str) -> str:
-        return filename

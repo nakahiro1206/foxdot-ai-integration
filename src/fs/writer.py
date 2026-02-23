@@ -1,5 +1,5 @@
 from pathlib import Path
-from src.env import env
+from ..env import env
 
 
 class FileSystem:
