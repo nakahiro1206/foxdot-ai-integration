@@ -2,6 +2,7 @@ import streamlit as st
 from src.components.file_list_v2 import FileList
 from src.components.file_content_v2 import FileContent
 from src.components.new_file_v2 import NewFile
+from src.components.regenerate import EditRequest
 
 
 def app():
@@ -16,6 +17,7 @@ def app():
     file_list = FileList()
     file_content = FileContent()
     new_file = NewFile()
+    edit_request = EditRequest()
 
     col_left, col_right = st.columns([1, 2])
 
@@ -27,6 +29,7 @@ def app():
             new_file.render()
         elif st.session_state.view == "file_content":
             file_content.render()
+            edit_request.render()
 
 
 if __name__ == "__main__":

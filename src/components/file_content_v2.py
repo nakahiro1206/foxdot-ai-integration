@@ -6,6 +6,7 @@ from src.resources import get_resource
 class FileContent:
     def __init__(self):
         self.process_manager = get_resource("ProcessManager")
+        self.fs = get_resource("FileSystem")
 
     def render(self):
         filename = st.session_state.get("selected_file")
@@ -25,10 +26,7 @@ class FileContent:
                 if st.button("⏹ Stop"):
                     self._stop_script()
 
-        from src.fs import FileSystem
-
-        fs = FileSystem()
-        content = fs.read(filename)
+        content = self.fs.read(filename)
         st.session_state.file_content_text = content
 
         st.code(content, language="python" if is_py else None)

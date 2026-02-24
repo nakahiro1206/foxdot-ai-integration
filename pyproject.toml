@@ -11,8 +11,11 @@ dependencies = [
     "langchain-openai>=1.1.10",
     "langfuse>=3.14.5",
     "langgraph>=1.0.9",
+    "pydantic>=2.12.5",
+    "pymilvus[milvus-lite]>=2.5.0",
     "pyright>=1.1.400",
     "python-dotenv>=1.2.1",
+    "setuptools==81.0.0",
     "streamlit>=1.54.0",
     "watchdog>=6.0.0",
 ]

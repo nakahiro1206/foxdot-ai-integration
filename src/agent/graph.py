@@ -32,7 +32,7 @@ def should_retry(state: State) -> str:
     return "code"
 
 
-class MucisComposerService:
+class MusicComposerService:
     def __init__(self, fs: FileSystem):
         self.fs = fs
         self.llm = ChatOpenAI(

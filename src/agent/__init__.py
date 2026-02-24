@@ -1,4 +1,4 @@
-from .graph import MucisComposerService
+from .graph import MusicComposerService
 from .state import State
 
-__all__ = ["MucisComposerService", "State"]
+__all__ = ["MusicComposerService", "State"]
