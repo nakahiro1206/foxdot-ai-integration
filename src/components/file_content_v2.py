@@ -1,11 +1,11 @@
 import streamlit as st
 from src.process import ProcessManager
+from src.resources import get_resource
 
 
 class FileContent:
     def __init__(self):
-        if "process_manager" not in st.session_state:
-            st.session_state.process_manager = ProcessManager()
+        self.process_manager = get_resource("ProcessManager")
 
     def render(self):
         filename = st.session_state.get("selected_file")
@@ -38,7 +38,7 @@ class FileContent:
             st.code(st.session_state.run_output)
 
     def _run_script(self, content: str):
-        pm: ProcessManager = st.session_state.process_manager
+        pm: ProcessManager = self.process_manager
         pm.stop_script()
         output = ""
         for status in pm.run_python_script(content):
@@ -51,6 +51,6 @@ class FileContent:
         st.session_state.run_output = output
 
     def _stop_script(self):
-        pm: ProcessManager = st.session_state.process_manager
+        pm: ProcessManager = self.process_manager
         status = pm.stop_script()
         st.session_state.run_output = status.message
