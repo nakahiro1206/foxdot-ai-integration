@@ -1,8 +1,9 @@
 import streamlit as st
 from src.resources import get_resource
+from .schema import Component
 
 
-class FileList:
+class FileList(Component):
     def __init__(self):
         self.file_watcher = get_resource("FileSystemWatcher")
 

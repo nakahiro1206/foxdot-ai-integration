@@ -1,9 +1,7 @@
 from datetime import datetime
 
-from langchain_core.messages import AIMessage
-
-from src.fs import FileSystem
 from ..state import State
+from src.fs import FileSystem
 from typing_extensions import TypedDict
 
 
@@ -16,17 +14,10 @@ class SaverNode:
         self.fs = fs
 
     def fn(self, state: State) -> SaverNodeOutput:
-        script: str | None = None
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, AIMessage) and msg.content:
-                script = msg.content
-                break
-        else:
-            return {}
-
+        script = state.get("assembled_code", "")
         if not script:
             return {}
-
+        
         script = "from FoxDot import *\n\n" + script + "\n\nGo()"
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{date_str}.py"

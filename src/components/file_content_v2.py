@@ -1,9 +1,10 @@
 import streamlit as st
 from src.process import ProcessManager
 from src.resources import get_resource
+from .schema import Component
 
 
-class FileContent:
+class FileContent(Component):
     def __init__(self):
         self.process_manager = get_resource("ProcessManager")
         self.fs = get_resource("FileSystem")

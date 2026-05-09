@@ -2,6 +2,8 @@
 
 A Gradio-based web application for browsing, editing, and executing [FoxDot](https://foxdot.org/) live-coding scripts. FoxDot scripts in the `data/` directory are listed in real time, and you can view and run them directly from the browser—making it easy to iterate on beat patterns, chord progressions, and song structures.
 
+Instruction in prompt is created from [the official documents](https://foxdot.org/docs/making-your-first-sounds/)
+
 ## Prerequisites
 
 - **Python 3.12+**

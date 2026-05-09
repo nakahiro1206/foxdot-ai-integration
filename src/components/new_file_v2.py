@@ -2,9 +2,10 @@ import streamlit as st
 from langchain_core.messages import HumanMessage
 from src.agent import MusicComposerService, State
 from src.resources import get_resource
+from .schema import Component
 
 
-class NewFile:
+class NewFile(Component):
     def __init__(self):
         self.music_composer_service = get_resource("MusicComposerService")
 
@@ -26,8 +27,18 @@ class NewFile:
 
         initial_state: State = {
             "messages": [HumanMessage(content=query)],
-            "plan": "",
             "retry_count": 0,
+            "enhanced_prompt": "",
+            "concept": "",
+            "structure": "",
+            "layer_drums": "",
+            "layer_harmony": "",
+            "layer_bass": "",
+            "layer_texture": "",
+            "assembled_code": "",
+            "critic_feedback": "",
+            "critic_pass": False,
+            "revision_count": 0,
         }
 
         async for chunk in service.astream_events(initial_state):

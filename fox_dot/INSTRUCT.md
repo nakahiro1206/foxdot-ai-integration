@@ -306,3 +306,267 @@ When uncertain
   - TimeVars (var/linvar)
   - .every transforms
   - play() string grammar (brackets/braces/angle brackets)
+
+Player attributes: delay, bpm, amplify, const
+
+- delay: per-note time offset in beats before the sound triggers. Enables swing, syncopation, polyrhythm:
+  p1 >> pluck([0,1,2,3], delay=[0, 0, 0.5, 0])    # syncopation
+  p1 >> pluck([0,2], delay=0.5)                     # push every note by half a beat
+- bpm: per-player independent tempo. Each player can run at its own speed, enabling polymeter without Clock hacks:
+  p1 >> pluck([0,1,2,3], bpm=120)   # this player at 120 regardless of Clock.bpm
+  p2 >> bass([0,3], bpm=60)         # half-speed bass against faster lead
+- amplify: multiplies the existing amp pattern (does not replace it). Useful for group-level ducking:
+  p1 >> pluck([0,1,2,3], amp=[1,0.5,0.8,0.5], amplify=0.6)  # scale all amp values by 0.6
+  g1 = Group(p1, p2, p3)
+  g1.amplify = var([1, 0.3], 8)     # sidechain-style pumping across the group
+- const(value): resists mathematical operations; value stays fixed even when used in var math:
+  p1 >> pluck([0, 4, const(7), const(6)], dur=1/2) + var([0,-2,-4], 4)
+  # 7 and 6 never transpose; 0 and 4 do
+  p1 >> pluck(var([0,-3,-2,-4], 4)) + (0, 2, const(4))
+  # the 4 in the chord is always the same pitch; 0 and 2 move with the var
+
+Full effects reference
+
+All effects are keyword arguments. The "master" keyword activates the effect; child keywords refine it.
+- sus=1, blur=1: note sustain in beats; blur multiplies sus for legato overlap
+  p1 >> pluck(dur=1, sus=2, blur=1.5)
+- pan=0: stereo position -1 (left) to 1 (right)
+  p1 >> pluck(pan=[-1,0,1,0])
+- fmod=0: adds Hz offset to one channel, creating flanger / slight detuning
+  p1 >> pads(fmod=2)
+- vib=0, vibdepth=0.02: vibrato rate and depth (fraction of freq)
+  p1 >> pads(dur=4, vib=4, vibdepth=0.1)
+- slide=0, slidedelay=0: frequency portamento to (1+n)*freq within sustain; delay 0-1 offsets start
+  p1 >> pluck(dur=4, slide=1, slidedelay=0.5)
+- slidefrom=0: slide from modified freq to original (inverse of slide)
+  p1 >> pluck(dur=4, slidefrom=0.5)
+- bend=0, benddelay=0: pitch bend that returns to original by note end
+  p1 >> pluck(dur=4, bend=1, benddelay=0.5)
+- glide=0, glidedelay=0.5: semitone-based portamento (more musical than slide)
+  p1 >> pluck([0,4], dur=4, glide=[7,-7])
+- chop=0: divides audio into n rhythmic slices across sustain (tremolo gate)
+  p1 >> pluck([0,1,2,3], dur=4, chop=4)
+- coarse=0: lo-fi sample degradation by reducing control rate (avoids clipping unlike chop)
+  c1 >> play("C", dur=4, coarse=16)
+- hpf=0, hpr=1: high-pass filter cutoff (Hz) and resonance
+  d1 >> play("x-o-", hpf=2000, hpr=0.2)
+  p1 >> pads(hpf=linvar([0,800], 32))
+- lpf=0, lpr=1: low-pass filter cutoff (Hz) and resonance
+  d1 >> play("x-o-", lpf=400, lpr=0.2)
+  b1 >> bass([0,3], lpf=900, lpr=0.5)
+- crush=0, bits=8: bitcrusher — reduces sample rate; each crush increment halves it (needs SC3 Plugins)
+  d1 >> play("X O ", crush=4, bits=4)
+- dist=0: distortion 0-1 (needs SC3 Plugins)
+  d1 >> play("x * ", dist=0.2)
+- shape=0: wave-shape distortion 0-1, no extra plugins needed
+  d1 >> play("x * ", shape=0.5)
+- drive=0: overdrive — amplifies then hard-clips 0-1+
+  p1 >> dirt(dur=0.5, drive=1)
+- room=0, mix=0.1: reverb room size and wet/dry mix
+  p1 >> pads(room=0.8, mix=0.35)
+- echo=0, echotime=1: delay repetitions every echo beats, total length echotime (usually needs room too)
+  p1 >> blip(dur=4, echo=1, echotime=8, room=0.3, mix=0.2)
+- spin=0: auto-pan left-to-right n times across sustain
+  p1 >> pads(dur=4, spin=2)
+- cut=0: hard-gates sound at proportion of sustain (0.5 = cut at halfway)
+  d1 >> play("x-o-", cut=0.1)
+- formant=0: resonance vowel filter 1-7 (like TidalCycles "vowel")
+  p1 >> pluck(formant=P[:8])
+  p1 >> pads(formant=var([2,5,3,6], 4))
+- tremolo=0: amplitude modulation via sine wave; value = oscillations per beat
+  p1 >> pads(dur=4, tremolo=2)
+- pshift=0: pitch shift in semitones (works on both synths and samples)
+  p1 >> pads(pshift=[0,1,2,3])
+  d1 >> play("x-o-", pshift=PRand(-2,2))
+
+Player Keys: reactive inter-player relationships
+
+Player Keys create live relationships between players. Access as attributes; they auto-update.
+- .pitch: current degree of a synth player (reactive, not a snapshot)
+  p2 >> pluck(p1.pitch + 2, dur=1/2)           # always tracks p1 a third up
+- .char: current degree of a play() player
+- Mathematical ops on Player Keys work and stay reactive:
+  p2 >> blip(p1.pitch + (0,2,4), dur=1/2)      # live harmony chord
+  p2 >> pluck(p1.pitch * -1 + 7)               # melodic inversion
+  p2 >> blip(p1.pitch + 2, pan=p1.pan * -1)    # mirror stereo field
+- .accompany(rel=[0,2,4]): moves to the nearest value in rel when source changes pitch.
+  Automatic voice-leading — the most idiomatic way to build harmonic layers:
+  p1 >> pluck([0,4,5,3], dur=2)
+  p2 >> pads(p1.pitch.accompany(), dur=4)       # auto-harmonises with p1
+  p2 >> pads(p1.pitch.accompany([0,3,5]), dur=4) # uses different intervals
+- .transform(func): apply any Python function reactively
+  p2 >> pluck(p1.pitch.transform(lambda x: x % 4), dur=1/2)
+- .map(dict, default=0): map pitch values to different values reactively
+  p2 >> pluck(p1.pitch.map({0:4, 3:1}, default=2))
+- Comparisons return 1/0 reactively (already in INSTRUCT but worth combining with Keys):
+  p2 >> play("*", amp=p1.amp != 1, dur=1/4)    # plays only when p1 is silent
+
+Expanded Pattern methods
+
+Complete list of useful Pattern methods not previously documented:
+- .mirror(): reverse including nested patterns (unlike .reverse() which leaves nested intact)
+  P[[0,1],2,3].mirror()  →  P[P[3,2],3,2,P[1,0]]
+- .invert(): flip values around min/max axis (melodic inversion)
+  P[2,5,1,11].invert()   →  P[10,7,11,1]
+- .swap(n): exchange values n positions apart
+  P[0,1,2,3].swap(2)     →  P[1,0,3,2]
+- .pivot(i): reverse around fixed index i
+  P[5,1,6,2,3].pivot(2)  →  P[3,2,6,1,5]
+- .palindrome(): append reversed copy (good for phrase arcs)
+  P[0,1,2,3].palindrome() → P[0,1,2,3,3,2,1,0]
+- .undup(): remove consecutive duplicates
+  P[0,1,1,2,2,3].undup() → P[0,1,2,3]
+- .arp(seq): arpeggiate — repeat each element stepping through seq offsets
+  P[0,1,2,3].arp([0,4])  → P[0,4,1,5,2,6,3,7]
+  p1 >> pluck(P[0,2,4].arp([0,2,4,7]))   # arpeggiated triad with added 7th
+- .splice(seq): interleave two patterns
+  P[0,1,2,3].splice([4,5,6,7]) → P[0,4,1,5,2,6,3,7]
+- .zip(seq): combine into grouped pairs (PGroups)
+  P[0,1,2,3].zip([4,5])  → P[P(0,4),P(1,5),P(2,4),P(3,5)]
+- .layer(method, *args): zip pattern with its own transformed version
+  P[0,1,2,3].layer("reverse") → P[P(0,3),P(1,2),P(2,1),P(3,0)]
+  p1 >> pluck(P[0,2,4].layer("rotate",1))  # original + rotated simultaneously
+- .norm(): normalise values to 0-1 range (useful for amp, fx values)
+  P[0,2,5,10].norm()     → P[0.0, 0.2, 0.5, 1.0]
+- .accum(): cumulative sum (irregular offset/delay patterns)
+  P[1,2,3,4].accum()     → P[0,1,3,6]
+- .sample(n): pick n random elements
+  P[0,1,2,3,4,5,6,7].sample(4)
+- .shufflets(n): create n random permutations as PGroups
+  P[0,1,2,3].shufflets(3)
+- .limit(func, value): append values until func(accumulated) exceeds value
+  P[0,1,2,3].limit(sum, 7)  → P[0,1,2,3,0,1]
+- .amen(): apply the classic amen break rhythm
+  d1 >> play(P["x-o-"].amen())
+- .concat(seq) or | operator: append pattern
+  P[0,1,2] | [3,4,5]    → P[0,1,2,3,4,5]
+- .loop(n): repeat n times
+  P[0,1,2].loop(2)       → P[0,1,2,0,1,2]
+- .trim(n) / .ltrim(n): truncate or remove from start
+  P[0,1,2,3,4].trim(3)   → P[0,1,2]
+  P[0,1,2,3,4].ltrim(2)  → P[2,3,4]
+
+Additional Pattern generators
+
+- PxRand(lo, hi) or PxRand([values]): like PRand but never repeats same value consecutively
+  p1 >> pluck(PxRand([0,2,4,5,7]))
+- PwRand([values], [weights]): weighted random; higher weight = more frequent
+  p1 >> pluck(PwRand([0,4,7], [3,1,2]))   # 0 is 3x more likely than 4
+- PChain({state: [next_states]}): Markov chain generator
+  p1 >> pluck(PChain({0:[2,4], 2:[0,4,7], 4:[0,2,5], 7:[0]}))
+- PDelta([increments]): cumulative sum from delta values; useful for irregular timing offsets
+  p1 >> pluck(PDelta([0.5])[:8])           # 0, 0.5, 1.0, 1.5...
+- PBern(size=16, ratio=0.5): Bernoulli sequence of 1s/0s; use for conditional gating
+  d1 >> play("x-o-", amp=PBern(16, 0.7))  # 70% chance of hitting each step
+- PBeat(string, dur=0.5): convert a string of non-space chars into duration pattern
+  p1 >> pluck([0,2,4], dur=PBeat("x  xx x", dur=0.5))
+- PEuclid2(n, k, lo, hi): like PEuclid but maps 1→hi and 0→lo (e.g. chars for play())
+  d1 >> play(PEuclid2(5, 8, " ", "x"))
+- PSq(a, b, c): perfect squares in range; niche but interesting for pitch/rhythm sequences
+- PFibMod(): infinite Fibonacci sequence (modulo scale for melody)
+  p1 >> pluck(PFibMod()[:8] % 7)
+
+PGroups and spread operators
+
+PGroups play values simultaneously (chords). Extended PGroup operators spread notes in time:
+- P*(x,y,z): spread notes equally across dur (arpeggiated within the beat)
+  p1 >> pluck(P*(0,2,4))
+- P+(x,y,z): spread notes equally across sus (sustain-gated arp)
+  p1 >> pluck(P+(0,2,4), sus=2)
+- P**(x,y,z): like P* but randomises order each time
+  p1 >> pluck(P**(0,2,4,7))
+- P/(x,y,z): P* effect alternates every other cycle
+  p1 >> pluck(P/(0,2,4))
+- P^(x,y,z,step): final value sets delay between notes (stepped stagger)
+  p1 >> pluck(P^(0,2,4, 0.25))   # stagger notes 0.25 beats apart
+- Lacing: a list inside a PGroup creates a Pattern of PGroups cycling through values:
+  P(0,1,[2,3]) → P[P(0,1,2), P(0,1,3)]
+
+TimeVar shapes: sinvar, expvar, and advanced usage
+
+- sinvar([v1,v2], dur): sinusoidal transition — faster at start, decelerates near target
+  p1 >> pads(amp=sinvar([0.2,0.8], 16))   # breathing amplitude
+- expvar([v1,v2], dur): exponential — slow start, dramatic finish
+  p1 >> pads(hpf=expvar([0,4000], 16))    # dramatic filter sweep
+- Combine var + expvar for selective animation:
+  p1 >> dirt(dur=1/4, hpf=var([0, expvar([0,4000],[4,0])], [28,4]))
+- TimeVar singletons:
+  - now: current clock beat value — use for start= to sync immediately:
+    d1 >> play("x-o-", amp=linvar([0,1], 8, start=now))
+  - nextbar: beat at start of next bar
+  - inf: hold final value forever (stop cycling):
+    d1 >> play("x-o-", amp=linvar([0,1], [8,inf], start=now))
+- Named vars auto-update all Players referencing them:
+  var.chords = var([0,4,5,3], 4)
+  var.chords.update([0,5,3,4], 4)   # live update across all users
+- .transform() on TimeVar for complex operations:
+  my_var = var([0,4,5,3], 4)
+  p1 >> pluck(my_var.transform(lambda x: x + 2 if x > 2 else x))
+
+Algorithmic manipulation: every() advanced usage
+
+- Irregular scheduling with list of durations:
+  p1 >> pluck([0,1,2,3]).every([6,2], "reverse")   # 6 beats, then 2 beats
+- Random timing with generators:
+  p1 >> pluck([0,1,2,3]).every(PRand([2,4,8]), "reverse")
+- Multiple instances of same method via ident:
+  d1 >> play("x-o-").every(8, "reverse").every(5, "reverse", ident=1)
+- cycle keyword: trigger at specific point within N-beat cycle (not every N beats):
+  d1 >> play("x-o-").every(6, "stutter", cycle=8)
+- Apply pattern method to a specific attribute via "attribute.method" string:
+  p1 >> pluck(oct=[4,5,6,7]).every(4, "oct.trim", 3)
+- Cycle object for alternating parameters across repeated calls:
+  d1 >> play("x-o-").every(4, "stutter", 4, dur=Cycle([3,2]))
+- stutter extended: supports rate, pan, and pattern parameters:
+  d1 >> play("x-o-").every(4, "stutter", 8, rate=[1,2,3,4,5,6,7,8])
+  d1 >> play("x-o-").every(4, "stutter", 4, pan=[-1,1], rate=2)
+
+Clock: advanced scheduling and time utilities
+
+- Clock.update_tempo_now(bpm): change tempo immediately (not next bar)
+- Clock.meter = (4, 4): set time signature
+- Clock.nudge = 0.02: offset downbeat in seconds for sync
+- Clock.next_bar(): beat number of upcoming bar
+- Clock.beat_dur(n): convert n beats to seconds
+- Clock.beats_to_seconds(b) / Clock.seconds_to_beats(s)
+- Clock.set_cpu_usage(v) / Clock.set_latency(v): performance tuning (0-2)
+- Clock.sync_to_espgrid(): multi-instance network sync
+- Clock.midi_nudge = 0.2: adjust MIDI timing offset (0.15-0.25 typical)
+- Temporal recursion for timed structural changes (use instead of loops):
+  def evolve(n=0):
+      if n == 0:
+          d1 >> play("x ")
+      elif n == 4:
+          d1 >> play("x-o-")
+      elif n == 8:
+          d1.stop()
+          return
+      Clock.future(4, evolve, args=(n+1,))
+  evolve()
+
+Roots, scales, and tuning
+
+- String root assignment: Root.default = "D" or Root.default = "D#"
+- Custom scale from semitone list: Scale.default = P[0,2,3,5,7,8,10]
+- Tuning systems (microtonal/non-Western):
+  Scale.default.set(tuning=Tuning.just)        # just intonation
+  Scale.default.set(tuning=Tuning.bohlen_pierce) # 13-tone scale
+- Per-player root must be numeric (not string): p1 >> pads([0,1,2], root=2)
+
+Groups: Master and solo control
+
+- Master(): Group of all currently active players
+  Master().hpf = 500       # filter everything
+  Master().stop()          # stop everything (equivalent to Clock.clear for players)
+- Group methods:
+  g1 = Group(p1, p2, p3)
+  g1.solo()                # mute all others
+  g1.only()                # stop all others
+  g1.stop()
+
+MIDI output
+
+- Send to MIDI device: p1 >> MidiOut([0,1,2,3,4,5], dur=PDur(3,8), amp=[1,1/2,1/2])
+- Select channel: p1 >> MidiOut([0,1,2,3], channel=1)
+- Adjust timing offset: Clock.midi_nudge = 0.2
+- Detect devices (run in SuperCollider): FoxDot.midi

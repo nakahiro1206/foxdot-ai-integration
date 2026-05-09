@@ -1,9 +1,5 @@
-import json
 import re
 import subprocess
-import sys
-import tempfile
-from pathlib import Path
 from src.config import config
 
 from typing_extensions import TypedDict
@@ -16,106 +12,178 @@ from langchain_core.messages import (
 from ..state import State
 
 
-class SyntaxErrorOutput(TypedDict):
+# ---------------------------------------------------------------------------
+# Output types
+# ---------------------------------------------------------------------------
+
+class ErrorOutput(TypedDict):
     messages: list[BaseMessage]
     retry_count: int
-
-
-class UndefinedNamesOutput(TypedDict):
-    messages: list[BaseMessage]
-    retry_count: int
+    assembled_code: str  # write back the cleaned code so saver always gets it
 
 
 class ValidationSuccessOutput(TypedDict):
     retry_count: int
+    assembled_code: str  # write back the cleaned code
 
 
-ScriptValidatorNodeOutput = (
-    SyntaxErrorOutput | UndefinedNamesOutput | ValidationSuccessOutput
-)
+ScriptValidatorNodeOutput = ErrorOutput | ValidationSuccessOutput
 
+
+# ---------------------------------------------------------------------------
+# Runtime execution harness
+# ---------------------------------------------------------------------------
+
+# How long (seconds) to let the script run before declaring success.
+# All >> assignments and FoxDot constructors are synchronous — errors surface
+# before Go() is reached. os._exit() is required because FoxDot's TempoClock
+# background threads prevent sys.exit() from terminating the process.
+RUNTIME_TIMEOUT = 5
+
+RUNTIME_HARNESS = """\
+import os as _os
+import threading as _threading
+import time as _time
+
+def Go():
+    def _stopper():
+        _time.sleep({timeout})
+        _os._exit(0)
+    t = _threading.Thread(target=_stopper, daemon=True)
+    t.start()
+    try:
+        while True:
+            _time.sleep(0.05)
+    except Exception:
+        pass
+
+""".format(timeout=RUNTIME_TIMEOUT)
+
+# stderr lines containing these strings are SC/OSC noise, not real errors
+_NOISE = frozenset([
+    "OSC",
+    "SuperCollider",
+    "Connection refused",
+    "No connection",
+    "sclang",
+    "DeprecationWarning",
+    "FutureWarning",
+    "UserWarning",
+    "import warnings",
+    "warnings.warn",
+])
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _clean(script: str) -> str:
+    """Remove any markdown fences the LLM may have included."""
+    if "```" in script:
+        script = re.sub(r"```(?:python)?\s*", "", script).strip()
+    return script
+
+
+def _check_syntax(script: str) -> str | None:
+    """Return an error string, or None if the script parses cleanly."""
+    try:
+        compile(script, "<foxdot_script>", "exec")
+        return None
+    except SyntaxError as e:
+        return f"SyntaxError at line {e.lineno}: {e.msg}"
+
+
+def _check_runtime(script: str) -> str | None:
+    """
+    Execute the script with a timed Go() override.
+
+    Returns None on success (clean exit), or an error string on failure.
+    The script is prepended with `from FoxDot import *` and the harness
+    so that all player assignments are evaluated in a real FoxDot context.
+    """
+    full = "from FoxDot import *\n\n" + RUNTIME_HARNESS + script
+
+    try:
+        result = subprocess.run(
+            [config.venv_python, "-c", full],
+            capture_output=True,
+            text=True,
+            timeout=RUNTIME_TIMEOUT + 10,
+        )
+    except subprocess.TimeoutExpired:
+        return "Runtime validation timed out."
+
+    if result.returncode == 0:
+        return None
+
+    # Filter SC/OSC noise from stderr
+    real_lines = [
+        line for line in result.stderr.splitlines()
+        if line.strip() and not any(noise in line for noise in _NOISE)
+    ]
+
+    if not real_lines:
+        # Non-zero exit but only SC noise — treat as pass
+        return None
+
+    return "Runtime error:\n" + "\n".join(real_lines[:40])
+
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
 
 class ScriptValidatorNode:
-    @staticmethod
-    def run_pyright(script: str) -> list[str]:
-        """Run pyright on a FoxDot script and return undefined-variable errors."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp = Path(tmpdir)
-
-            # Pyright config pointing to static FoxDot stubs
-            (tmp / "pyrightconfig.json").write_text(
-                json.dumps(
-                    {
-                        "stubPath": str(config.foxdot_stub),
-                        "reportMissingModuleSource": False,
-                        "reportUnusedExpression": False,
-                    }
-                )
-            )
-
-            # Script file (prepend the FoxDot import)
-            script_path = tmp / "script.py"
-            script_path.write_text(f"from FoxDot import *\n{script}")
-
-            result = subprocess.run(
-                [sys.executable, "-m", "pyright", "--outputjson", str(script_path)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=tmpdir,
-            )
-
-            try:
-                data = json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return []
-
-            errors: list[str] = []
-            for diag in data.get("generalDiagnostics", []):
-                if diag.get("rule") == "reportUndefinedVariable":
-                    line = diag["range"]["start"]["line"]  # 0-indexed; line 0 = import
-                    msg = diag.get("message", "")
-                    errors.append(f"Line {line}: {msg}")
-            return errors
 
     @staticmethod
     def fn(state: State) -> ScriptValidatorNodeOutput:
-        script = state["messages"][-1].content
-        assert isinstance(script, str), (
-            "Expected the last message content to be a string containing the FoxDot script"
-        )
-        # Clean markdown if the LLM ignored instructions
-        if script.startswith("```"):
-            script = re.sub(r"```python|```", "", script).strip()
+        # Read from assembled_code (canonical source), fall back to last message
+        script = state.get("assembled_code") or state["messages"][-1].content
+        assert isinstance(script, str), "Expected script to be a string"
 
-        try:
-            compile(script, "<foxdot_script>", "exec")
-        except SyntaxError as e:
-            error_msg = f"Syntax error at line {e.lineno}: {e.msg}"
-            retry_count = state.get("retry_count", 0) + 1
+        # Always clean — assembler strips fences too, but this is the safety net
+        script = _clean(script)
+
+        retry_count = state.get("retry_count", 0)
+
+        # --- Stage 1: Syntax ---
+        syntax_err = _check_syntax(script)
+        if syntax_err:
             return {
+                "assembled_code": script,
                 "messages": [
                     AIMessage(content=script),
                     HumanMessage(
-                        content=f"The generated script has a syntax error:\n{error_msg}\nPlease fix it and return only the corrected FoxDot code."
+                        content=(
+                            f"Syntax error in the script:\n{syntax_err}\n\n"
+                            "Return only the corrected FoxDot code, no markdown."
+                        )
                     ),
                 ],
-                "retry_count": retry_count,
+                "retry_count": retry_count + 1,
             }
 
-        pyright_errors = ScriptValidatorNode.run_pyright(script)
-        if pyright_errors:
-            error_msg = "Pyright found undefined names:\n" + "\n".join(pyright_errors)
-            retry_count = state.get("retry_count", 0) + 1
+        # --- Stage 2: Runtime execution ---
+        runtime_err = _check_runtime(script)
+        if runtime_err:
             return {
+                "assembled_code": script,
                 "messages": [
                     AIMessage(content=script),
                     HumanMessage(
-                        content=f"The generated script has undefined names:\n{error_msg}\n"
-                        "Use only valid FoxDot synths and built-in objects. "
-                        "Please fix it and return only the corrected FoxDot code."
+                        content=(
+                            f"The script failed at runtime:\n{runtime_err}\n\n"
+                            "Fix the error and return only the corrected FoxDot code, "
+                            "no markdown."
+                        )
                     ),
                 ],
-                "retry_count": retry_count,
+                "retry_count": retry_count + 1,
             }
-        return {"retry_count": state.get("retry_count", 0)}
+
+        # All stages passed
+        return {
+            "assembled_code": script,
+            "retry_count": retry_count,
+        }
